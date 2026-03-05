@@ -19,3 +19,6 @@ voices/profiles/*/*/*
 !voices/audit/.gitkeep
 !voices/guilds/.gitkeep
 !models/.gitkeep
+
+models/qwen3tts/*
+!models/qwen3tts/.gitkeep
