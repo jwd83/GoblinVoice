@@ -80,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             SynthesizeRequest(
                 guild_id=payload.guild_id,
                 text=payload.text,
+                user_id=payload.user_id,
                 voice=payload.voice,
                 style=payload.style,
                 backend=payload.backend,

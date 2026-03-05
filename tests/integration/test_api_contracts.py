@@ -9,6 +9,9 @@ from goblinvoice.api.app import create_app
 
 def test_health_and_synthesize_contract(settings) -> None:
     app = create_app(settings)
+    service = app.state.service
+    service.set_user_default_backend(123, 99, "qwen3tts")
+    service.set_user_default_voice(123, 99, "default")
 
     with TestClient(app) as client:
         health = client.get("/health")
@@ -25,6 +28,15 @@ def test_health_and_synthesize_contract(settings) -> None:
         synth_payload = synth.json()
         assert synth_payload["backend"] == "qwen3tts"
         assert Path(synth_payload["audioPath"]).exists()
+
+        preferred = client.post(
+            "/synthesize",
+            json={"guildId": 123, "userId": 99, "text": "hello from saved prefs"},
+        )
+        assert preferred.status_code == 200
+        preferred_payload = preferred.json()
+        assert preferred_payload["backend"] == "qwen3tts"
+        assert Path(preferred_payload["audioPath"]).exists()
 
         voices = client.get("/voices/123")
         assert voices.status_code == 200

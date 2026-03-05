@@ -29,6 +29,18 @@ def test_storage_round_trip_backend_and_voice(tmp_path: Path) -> None:
     assert voices[0].voice_id == "voice-1"
 
 
+def test_storage_round_trip_user_preferences(tmp_path: Path) -> None:
+    store = FilesystemStore(tmp_path / "voices")
+
+    store.set_user_preferences(123, 42, backend="qwen3tts")
+    store.set_user_preferences(123, 42, voice="default")
+
+    prefs = store.get_user_preferences(123, 42)
+    assert prefs is not None
+    assert prefs.backend == "qwen3tts"
+    assert prefs.voice == "default"
+
+
 def test_consent_token_is_one_time(tmp_path: Path) -> None:
     store = FilesystemStore(tmp_path / "voices")
     token = store.create_consent_token(123, target="alice", issued_by="42")

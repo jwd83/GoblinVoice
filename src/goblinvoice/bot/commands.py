@@ -15,6 +15,7 @@ from goblinvoice.orchestrator.service import GoblinVoiceService
 from goblinvoice.types import CloneRequest, SynthesizeRequest
 
 logger = logging.getLogger(__name__)
+_MAX_AUTOCOMPLETE_CHOICES = 25
 
 
 def parse_tts_command(content: str) -> tuple[str, str | None]:
@@ -35,6 +36,73 @@ def register_commands(
 ) -> None:
     if not hasattr(bot, "reader_enabled_guilds"):
         bot.reader_enabled_guilds = set()  # type: ignore[attr-defined]
+
+    def build_choices(
+        candidates: list[tuple[str, str]],
+        *,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        needle = current.strip().lower()
+        choices: list[app_commands.Choice[str]] = []
+        seen_values: set[str] = set()
+        for name, value in candidates:
+            if value in seen_values:
+                continue
+            haystack = f"{name} {value}".lower()
+            if needle and needle not in haystack:
+                continue
+            seen_values.add(value)
+            choices.append(app_commands.Choice(name=name[:100], value=value))
+            if len(choices) >= _MAX_AUTOCOMPLETE_CHOICES:
+                break
+        return choices
+
+    async def complete_backends(
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        del interaction
+        candidates = [(name, name) for name in sorted(service.registry.names())]
+        return build_choices(candidates, current=current)
+
+    async def complete_voices(
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        if interaction.guild is None:
+            return []
+        try:
+            catalog = await service.list_voice_catalog(interaction.guild.id)
+        except GoblinVoiceError:
+            return []
+
+        candidates: list[tuple[str, str]] = []
+        builtin = catalog.get("builtin", [])
+        if isinstance(builtin, list):
+            for entry in builtin:
+                if not isinstance(entry, dict):
+                    continue
+                backend = entry.get("backend")
+                voice_id = entry.get("voice_id")
+                if isinstance(backend, str) and isinstance(voice_id, str):
+                    candidates.append((f"{voice_id} ({backend})", voice_id))
+
+        cloned = catalog.get("cloned", [])
+        if isinstance(cloned, list):
+            for entry in cloned:
+                if not isinstance(entry, dict):
+                    continue
+                backend = entry.get("backend")
+                voice_id = entry.get("voice_id")
+                name = entry.get("name")
+                if (
+                    isinstance(backend, str)
+                    and isinstance(voice_id, str)
+                    and isinstance(name, str)
+                ):
+                    candidates.append((f"{voice_id} | {name} ({backend})", voice_id))
+
+        return build_choices(candidates, current=current)
 
     @bot.tree.command(name="join", description="Join your current voice channel")
     async def join(interaction: discord.Interaction) -> None:
@@ -104,6 +172,7 @@ def register_commands(
                 SynthesizeRequest(
                     guild_id=interaction.guild.id,
                     text=text,
+                    user_id=interaction.user.id,
                     voice=voice,
                     style=style,
                     backend=backend,
@@ -218,9 +287,55 @@ def register_commands(
                     lines.append(f"`{voice_id}` | {name} | {backend}")
 
         lines.append("")
-        lines.append("Use `/tts ... voice:<id> backend:<model>` to pick one.")
+        lines.append(
+            "Use `/tts` params for one-off choices, "
+            "or `/pick voice` and `/pick backend` to save defaults."
+        )
 
         await interaction.response.send_message("\n".join(lines))
+
+    pick_group = app_commands.Group(
+        name="pick",
+        description="Set your personal default backend/voice",
+    )
+
+    @pick_group.command(name="voice", description="Set your default voice for /tts")
+    @app_commands.autocomplete(voice=complete_voices)
+    async def pick_voice(interaction: discord.Interaction, voice: str) -> None:
+        if interaction.guild is None or interaction.user is None:
+            await interaction.response.send_message("Guild context required.", ephemeral=True)
+            return
+
+        try:
+            service.set_user_default_voice(interaction.guild.id, interaction.user.id, voice)
+        except GoblinVoiceError as exc:
+            await interaction.response.send_message(exc.message, ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            f"Saved your default voice as `{voice}`",
+            ephemeral=True,
+        )
+
+    @pick_group.command(name="backend", description="Set your default backend for /tts")
+    @app_commands.autocomplete(provider=complete_backends)
+    async def pick_backend(interaction: discord.Interaction, provider: str) -> None:
+        if interaction.guild is None or interaction.user is None:
+            await interaction.response.send_message("Guild context required.", ephemeral=True)
+            return
+
+        try:
+            service.set_user_default_backend(interaction.guild.id, interaction.user.id, provider)
+        except GoblinVoiceError as exc:
+            await interaction.response.send_message(exc.message, ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            f"Saved your default backend as `{provider}`",
+            ephemeral=True,
+        )
+
+    bot.tree.add_command(pick_group)
 
     backend_group = app_commands.Group(name="backend", description="Backend controls")
 
@@ -262,7 +377,12 @@ def register_commands(
             return
 
         result = await service.synthesize(
-            SynthesizeRequest(guild_id=ctx.guild.id, text=text, backend=backend)
+            SynthesizeRequest(
+                guild_id=ctx.guild.id,
+                text=text,
+                user_id=ctx.author.id,
+                backend=backend,
+            )
         )
         await playback.play_file(ctx.guild.id, voice_client, result.audio_path)
         await ctx.send(f"Spoke via `{result.backend}`")

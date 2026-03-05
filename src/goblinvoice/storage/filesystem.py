@@ -9,13 +9,14 @@ from typing import Any, cast
 from uuid import uuid4
 
 from goblinvoice.errors import ConsentError
-from goblinvoice.types import VoiceProfile, utc_now_iso
+from goblinvoice.types import UserPreferences, VoiceProfile, utc_now_iso
 
 
 class FilesystemStore:
     def __init__(self, voices_dir: Path) -> None:
         self.voices_dir = voices_dir
         self.guild_dir = voices_dir / "guilds"
+        self.users_dir = voices_dir / "users"
         self.profiles_dir = voices_dir / "profiles"
         self.consents_dir = voices_dir / "consents"
         self.audit_dir = voices_dir / "audit"
@@ -27,6 +28,7 @@ class FilesystemStore:
         for path in (
             self.voices_dir,
             self.guild_dir,
+            self.users_dir,
             self.profiles_dir,
             self.consents_dir,
             self.audit_dir,
@@ -65,6 +67,60 @@ class FilesystemStore:
         if isinstance(backend, str) and backend:
             return backend
         return None
+
+    def user_preferences_path(self, guild_id: int, user_id: int) -> Path:
+        return self.users_dir / str(guild_id) / f"{user_id}.json"
+
+    def set_user_preferences(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        backend: str | None = None,
+        voice: str | None = None,
+    ) -> UserPreferences:
+        path = self.user_preferences_path(guild_id, user_id)
+        with self._lock:
+            current = self._read_json(path, default={})
+            if backend is None:
+                backend_value = current.get("backend")
+                if isinstance(backend_value, str) and backend_value:
+                    backend = backend_value
+            if voice is None:
+                voice_value = current.get("voice")
+                voice = voice_value if isinstance(voice_value, str) and voice_value else None
+
+            preferences = UserPreferences(
+                guild_id=guild_id,
+                user_id=user_id,
+                backend=backend,
+                voice=voice,
+            )
+            self._atomic_write_json(path, preferences.to_dict())
+            return preferences
+
+    def get_user_preferences(self, guild_id: int, user_id: int) -> UserPreferences | None:
+        payload = self._read_json(self.user_preferences_path(guild_id, user_id), default={})
+        if not payload:
+            return None
+
+        backend_value = payload.get("backend")
+        backend = backend_value if isinstance(backend_value, str) and backend_value else None
+        voice_value = payload.get("voice")
+        voice = voice_value if isinstance(voice_value, str) and voice_value else None
+
+        if backend is None and voice is None:
+            return None
+
+        updated_at_value = payload.get("updated_at") or payload.get("updatedAt")
+        updated_at = updated_at_value if isinstance(updated_at_value, str) else utc_now_iso()
+        return UserPreferences(
+            guild_id=guild_id,
+            user_id=user_id,
+            backend=backend,
+            voice=voice,
+            updated_at=updated_at,
+        )
 
     def save_voice_profile(self, profile: VoiceProfile) -> Path:
         path = self.profiles_dir / str(profile.guild_id) / f"{profile.voice_id}.json"

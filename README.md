@@ -39,10 +39,13 @@ uv run goblinvoice --down
 - `/clone name sample_path consent_token backend?`
 - `/cloneconsent target`
 - `/voices`
+- `/pick voice voice_id`
+- `/pick backend provider`
 - `/backend set provider`
 - `/backend status`
 
 `/voices` now shows both built-in voices by backend and guild cloned voices.
+`/pick` saves per-user defaults so `/tts` can omit `voice` and `backend`.
 
 ## Dev Checks
 

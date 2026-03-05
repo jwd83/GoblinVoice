@@ -16,6 +16,7 @@ from goblinvoice.types import (
     CloneRequest,
     SynthesisResult,
     SynthesizeRequest,
+    UserPreferences,
     VoiceProfile,
 )
 
@@ -58,16 +59,38 @@ class GoblinVoiceService:
 
     async def synthesize(self, request: SynthesizeRequest) -> SynthesisResult:
         available = self.registry.names()
+        preferences = self.get_user_preferences(request.guild_id, request.user_id)
+        backend_override = self._resolve_backend_override(
+            request_backend=request.backend,
+            preferences=preferences,
+            available=available,
+        )
         guild_default = self.store.get_guild_backend_default(request.guild_id)
         primary = self.policy.resolve(
-            request_override=request.backend,
+            request_override=backend_override,
             guild_default=guild_default,
             available=available,
         )
 
+        voice = request.voice
+        if voice is None and preferences is not None:
+            voice = preferences.voice
+
+        resolved_request = request
+        if voice != request.voice:
+            resolved_request = SynthesizeRequest(
+                guild_id=request.guild_id,
+                text=request.text,
+                user_id=request.user_id,
+                voice=voice,
+                style=request.style,
+                backend=request.backend,
+                correlation_id=request.correlation_id,
+            )
+
         output_path = self._render_output_path(request.guild_id)
         try:
-            await self._run_synthesize(primary, request, output_path)
+            await self._run_synthesize(primary, resolved_request, output_path)
             backend_used = primary
         except GoblinVoiceError as exc:
             fallback = self.policy.fallback(primary=primary, available=available)
@@ -80,7 +103,7 @@ class GoblinVoiceService:
                         "fallback": fallback,
                     },
                 )
-                await self._run_synthesize(fallback, request, output_path)
+                await self._run_synthesize(fallback, resolved_request, output_path)
                 backend_used = fallback
             else:
                 raise
@@ -186,6 +209,25 @@ class GoblinVoiceService:
             raise ValidationError(f"Unknown backend: {provider}")
         self.store.set_guild_backend_default(guild_id, normalized)
 
+    def set_user_default_backend(self, guild_id: int, user_id: int, provider: str) -> None:
+        normalized = provider.strip().lower()
+        if not normalized:
+            raise ValidationError("Backend cannot be empty")
+        if normalized not in self.registry.names():
+            raise ValidationError(f"Unknown backend: {provider}")
+        self.store.set_user_preferences(guild_id, user_id, backend=normalized)
+
+    def set_user_default_voice(self, guild_id: int, user_id: int, voice: str) -> None:
+        normalized = voice.strip()
+        if not normalized:
+            raise ValidationError("Voice cannot be empty")
+        self.store.set_user_preferences(guild_id, user_id, voice=normalized)
+
+    def get_user_preferences(self, guild_id: int, user_id: int | None) -> UserPreferences | None:
+        if user_id is None:
+            return None
+        return self.store.get_user_preferences(guild_id, user_id)
+
     async def backend_status(self) -> list[dict[str, Any]]:
         statuses = await self.registry.statuses()
         return [
@@ -247,3 +289,22 @@ class GoblinVoiceService:
         render_dir = self.store.renders_dir / str(guild_id)
         render_dir.mkdir(parents=True, exist_ok=True)
         return render_dir / f"{uuid4().hex}.wav"
+
+    def _resolve_backend_override(
+        self,
+        *,
+        request_backend: str | None,
+        preferences: UserPreferences | None,
+        available: list[str],
+    ) -> str | None:
+        if request_backend is not None:
+            return request_backend
+
+        if preferences is None or preferences.backend is None:
+            return None
+
+        normalized = preferences.backend.strip().lower()
+        normalized_available = {name.strip().lower() for name in available}
+        if normalized in normalized_available:
+            return normalized
+        return None

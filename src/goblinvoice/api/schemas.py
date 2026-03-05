@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class SynthesizeIn(BaseModel):
     guild_id: int = Field(alias="guildId")
     text: str
+    user_id: int | None = Field(default=None, alias="userId")
     voice: str | None = None
     style: str | None = None
     backend: str | None = None

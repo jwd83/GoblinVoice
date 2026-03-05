@@ -19,6 +19,7 @@ def new_correlation_id() -> str:
 class SynthesizeRequest:
     guild_id: int
     text: str
+    user_id: int | None = None
     voice: str | None = None
     style: str | None = None
     backend: str | None = None
@@ -53,6 +54,18 @@ class VoiceProfile:
     sample_path: str
     created_at: str = field(default_factory=utc_now_iso)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class UserPreferences:
+    guild_id: int
+    user_id: int
+    backend: str | None = None
+    voice: str | None = None
+    updated_at: str = field(default_factory=utc_now_iso)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

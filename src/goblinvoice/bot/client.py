@@ -84,6 +84,7 @@ class GoblinVoiceBot(commands.Bot):
                 SynthesizeRequest(
                     guild_id=guild.id,
                     text=f"{message.author.display_name} says {message.content}",
+                    user_id=message.author.id,
                 )
             )
             await self.playback.play_file(guild.id, voice_client, result.audio_path)
