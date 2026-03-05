@@ -1,2 +1,21 @@
 .env
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.pyc
 
+logs/*
+.pids/*
+voices/renders/*
+voices/profiles/*/*/*
+
+!logs/.gitkeep
+!.pids/.gitkeep
+!voices/.gitkeep
+!voices/renders/.gitkeep
+!voices/profiles/.gitkeep
+!voices/consents/.gitkeep
+!voices/audit/.gitkeep
+!voices/guilds/.gitkeep
+!models/.gitkeep

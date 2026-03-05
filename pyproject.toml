@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "goblinvoice"
+version = "0.1.0"
+description = "Discord TTS bot with pluggable voice backends"
+readme = "plan.md"
+requires-python = ">=3.11"
+authors = [{ name = "GoblinVoice" }]
+dependencies = [
+  "discord.py[voice]>=2.5.0",
+  "fastapi>=0.116.0",
+  "httpx>=0.28.0",
+  "pocket-tts>=1.1.1",
+  "pydantic>=2.11.0",
+  "pydantic-settings>=2.10.0",
+  "uvicorn[standard]>=0.35.0",
+]
+
+[project.scripts]
+goblinvoice-api = "goblinvoice.api.app:main"
+goblinvoice-bot = "goblinvoice.bot.client:main"
+goblinvoice = "tools.goblinvoice_tui:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.17.0",
+  "pytest>=8.4.0",
+  "pytest-asyncio>=1.1.0",
+  "ruff>=0.12.0",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/goblinvoice", "tools"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+warn_unused_configs = true
+packages = ["goblinvoice"]
+
+[[tool.mypy.overrides]]
+module = ["discord.*"]
+ignore_missing_imports = true
