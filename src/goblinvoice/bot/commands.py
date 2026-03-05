@@ -57,15 +57,7 @@ def register_commands(
                 break
         return choices
 
-    async def complete_backends(
-        interaction: discord.Interaction,
-        current: str,
-    ) -> list[app_commands.Choice[str]]:
-        del interaction
-        candidates = [(name, name) for name in sorted(service.registry.names())]
-        return build_choices(candidates, current=current)
-
-    async def complete_voices(
+    async def complete_model_voice(
         interaction: discord.Interaction,
         current: str,
     ) -> list[app_commands.Choice[str]]:
@@ -85,7 +77,8 @@ def register_commands(
                 backend = entry.get("backend")
                 voice_id = entry.get("voice_id")
                 if isinstance(backend, str) and isinstance(voice_id, str):
-                    candidates.append((f"{voice_id} ({backend})", voice_id))
+                    pair = f"{backend}:{voice_id}"
+                    candidates.append((pair, pair))
 
         cloned = catalog.get("cloned", [])
         if isinstance(cloned, list):
@@ -100,7 +93,8 @@ def register_commands(
                     and isinstance(voice_id, str)
                     and isinstance(name, str)
                 ):
-                    candidates.append((f"{voice_id} | {name} ({backend})", voice_id))
+                    value = f"{backend}:{voice_id}"
+                    candidates.append((f"{value} ({name})", value))
 
         return build_choices(candidates, current=current)
 
@@ -289,53 +283,42 @@ def register_commands(
         lines.append("")
         lines.append(
             "Use `/tts` params for one-off choices, "
-            "or `/pick voice` and `/pick backend` to save defaults."
+            "or `/pick model_voice` to save your default backend + voice."
         )
 
         await interaction.response.send_message("\n".join(lines))
 
-    pick_group = app_commands.Group(
+    @bot.tree.command(
         name="pick",
-        description="Set your personal default backend/voice",
+        description="Set your personal default model:voice for /tts",
     )
-
-    @pick_group.command(name="voice", description="Set your default voice for /tts")
-    @app_commands.autocomplete(voice=complete_voices)
-    async def pick_voice(interaction: discord.Interaction, voice: str) -> None:
+    @app_commands.autocomplete(model_voice=complete_model_voice)
+    async def pick(interaction: discord.Interaction, model_voice: str) -> None:
         if interaction.guild is None or interaction.user is None:
             await interaction.response.send_message("Guild context required.", ephemeral=True)
             return
 
+        model_raw, sep, voice_raw = model_voice.partition(":")
+        provider = model_raw.strip().lower()
+        voice = voice_raw.strip()
+        if not sep or not provider or not voice:
+            await interaction.response.send_message(
+                "Use format `backend:voice` (example: `pockettts:alba`).",
+                ephemeral=True,
+            )
+            return
+
         try:
+            service.set_user_default_backend(interaction.guild.id, interaction.user.id, provider)
             service.set_user_default_voice(interaction.guild.id, interaction.user.id, voice)
         except GoblinVoiceError as exc:
             await interaction.response.send_message(exc.message, ephemeral=True)
             return
 
         await interaction.response.send_message(
-            f"Saved your default voice as `{voice}`",
+            f"Saved your default as `{provider}:{voice}`",
             ephemeral=True,
         )
-
-    @pick_group.command(name="backend", description="Set your default backend for /tts")
-    @app_commands.autocomplete(provider=complete_backends)
-    async def pick_backend(interaction: discord.Interaction, provider: str) -> None:
-        if interaction.guild is None or interaction.user is None:
-            await interaction.response.send_message("Guild context required.", ephemeral=True)
-            return
-
-        try:
-            service.set_user_default_backend(interaction.guild.id, interaction.user.id, provider)
-        except GoblinVoiceError as exc:
-            await interaction.response.send_message(exc.message, ephemeral=True)
-            return
-
-        await interaction.response.send_message(
-            f"Saved your default backend as `{provider}`",
-            ephemeral=True,
-        )
-
-    bot.tree.add_command(pick_group)
 
     backend_group = app_commands.Group(name="backend", description="Backend controls")
 

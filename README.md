@@ -39,8 +39,7 @@ uv run goblinvoice --down
 - `/clone name sample_path consent_token backend?`
 - `/cloneconsent target`
 - `/voices`
-- `/pick voice voice_id`
-- `/pick backend provider`
+- `/pick model_voice` (format: `backend:voice`, autocomplete supported)
 - `/backend set provider`
 - `/backend status`
 
